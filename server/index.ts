@@ -1,3 +1,4 @@
+import { detectTemplate, fillTemplate } from "./templateFiller.js";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
 import { z } from "zod";
@@ -121,6 +122,31 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof ApiError) return fail(res, err.status, err.code, err.message);
   console.error("Unhandled:", err instanceof Error ? err.message : "unknown error");
   fail(res, 500, "SERVER_ERROR", "Something went wrong on the server.");
+});
+api.post("/generate-template", (req: Request, res: Response) => {
+  try {
+    const { specData, blueprintData, overrideTemplate, overrideReason } = req.body;
+    if (!specData) {
+      return fail(res, 400, "MISSING_DATA", "Missing specData in request body");
+    }
+
+    const detection = detectTemplate(specData);
+    const chosenTemplate = (overrideTemplate || detection.detectedTemplate) as "integrated" | "non-lab";
+
+    const { html, sampleStrings } = fillTemplate(chosenTemplate, specData, blueprintData);
+
+    return ok(res, {
+      html,
+      detectedTemplate: detection.detectedTemplate,
+      appliedTemplate: chosenTemplate,
+      signals: detection.signals,
+      isOverridden: Boolean(overrideTemplate && overrideTemplate !== detection.detectedTemplate),
+      overrideReason: overrideReason || "",
+      sampleStrings,
+    });
+  } catch (err: any) {
+    return fail(res, 500, "TEMPLATE_ERROR", err.message || "Failed to render template");
+  }
 });
 
 const port = Number(process.env.PORT ?? 3001);
